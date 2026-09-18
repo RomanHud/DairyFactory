@@ -1,0 +1,764 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Dairy Factory - Milkdrop MP4 Generator</title>
+
+  <!-- Local Script References -->
+  <script src="butterchurn.min.js"></script>
+  <script src="butterchurnPresets.min.js"></script>
+  <!-- JSZip for batch zip downloading -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+
+  <style>
+    :root {
+      --bg: #f4f5f7;
+      --card-bg: #ffffff;
+      --accent: #2563eb;
+      --accent-hover: #1d4ed8;
+      --text: #1f2937;
+      --text-dim: #6b7280;
+      --border: #e5e7eb;
+      --success: #059669;
+      --warning: #dc2626;
+      --milky-glow: #ffffff;
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: system-ui, -apple-system, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      padding: 2rem;
+      max-width: 1200px;
+      margin: 0 auto;
+    }
+
+    h1 { font-size: 1.8rem; margin-bottom: 0.5rem; color: #111827; display: flex; align-items: center; gap: 0.5rem; }
+    p.subtitle { color: var(--text-dim); margin-bottom: 1.5rem; }
+
+    #fileProtocolWarning {
+      display: none;
+      background: #fef2f2;
+      border: 1px solid #fecaca;
+      color: #991b1b;
+      padding: 1rem;
+      border-radius: 8px;
+      margin-bottom: 1.5rem;
+      font-size: 0.9rem;
+      line-height: 1.5;
+    }
+
+    .grid {
+      display: grid;
+      grid-template-columns: 380px 1fr;
+      gap: 1.5rem;
+      margin-bottom: 1.5rem;
+    }
+
+    .card {
+      background: var(--card-bg);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 1.25rem;
+      box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05);
+    }
+
+    .card h2 {
+      font-size: 1.1rem;
+      margin-bottom: 1rem;
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+      color: #111827;
+    }
+
+    label { display: block; font-size: 0.85rem; color: var(--text-dim); margin-bottom: 0.25rem; font-weight: 500; }
+    select, input, button {
+      width: 100%;
+      padding: 0.65rem;
+      border-radius: 8px;
+      border: 1px solid var(--border);
+      background: #f9fafb;
+      color: var(--text);
+      font-size: 0.9rem;
+      margin-bottom: 0.85rem;
+    }
+
+    .btn-secondary {
+      background: #f3f4f6;
+      color: var(--text);
+      border: 1px solid var(--border);
+      cursor: pointer;
+      font-weight: 500;
+      transition: background 0.2s;
+    }
+    .btn-secondary:hover { background: #e5e7eb; }
+
+    button.btn-primary {
+      background: var(--accent);
+      color: white;
+      font-weight: 600;
+      border: none;
+      cursor: pointer;
+      transition: background 0.2s;
+    }
+    button.btn-primary:hover { background: var(--accent-hover); }
+    button:disabled { opacity: 0.5; cursor: not-allowed; }
+
+    .badge {
+      font-size: 0.75rem;
+      padding: 0.2rem 0.5rem;
+      border-radius: 4px;
+      background: #eff6ff;
+      color: var(--accent);
+      font-weight: 600;
+    }
+
+    #previewCanvas {
+      width: 100%;
+      aspect-ratio: 16/9;
+      background: #000;
+      border-radius: 8px;
+      object-fit: contain;
+    }
+
+    .preview-controls {
+      display: flex;
+      gap: 0.5rem;
+      margin-top: 0.75rem;
+    }
+
+    .queue-table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-top: 0.5rem;
+    }
+    .queue-table th, .queue-table td {
+      text-align: left;
+      padding: 0.65rem;
+      border-bottom: 1px solid var(--border);
+    }
+    .queue-table th { color: var(--text-dim); font-size: 0.8rem; text-transform: uppercase; }
+
+    .progress-bar-bg {
+      width: 100%;
+      height: 6px;
+      background: var(--border);
+      border-radius: 3px;
+      overflow: hidden;
+    }
+    .progress-bar-fill {
+      height: 100%;
+      width: 0%;
+      background: var(--accent);
+      transition: width 0.1s linear;
+    }
+
+    #logBox {
+      background: #111827;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 0.75rem;
+      font-family: monospace;
+      font-size: 0.8rem;
+      height: 100px;
+      overflow-y: auto;
+      color: #34d399;
+    }
+
+    .row-preset-select {
+      margin-bottom: 0;
+      padding: 0.4rem;
+      font-size: 0.8rem;
+    }
+
+    .notice-banner {
+      background: #eff6ff;
+      border: 1px solid #bfdbfe;
+      color: #1e40af;
+      padding: 0.75rem 1rem;
+      border-radius: 8px;
+      font-size: 0.85rem;
+      margin-bottom: 1rem;
+      display: none;
+    }
+  </style>
+</head>
+<body>
+
+  <h1>🐄 Dairy Factory</h1>
+  <p class="subtitle">Select audio files, pick your favorite Milkdrop presets (or upload local <code>.milk</code> folder), and batch export 1080p MP4 videos client-side.</p>
+
+  <div id="fileProtocolWarning">
+    ⚠️ <strong>Local File Protocol Detected (file://)</strong><br>
+    Browsers block ES Modules, WebCodecs, and WebAudio features when opening files directly from disk.<br>
+    <strong>Please run this app using a local web server</strong> (e.g. VS Code <em>Live Server</em>, <code>npx serve .</code>, or <code>python -m http.server 8000</code>).
+  </div>
+
+  <div class="grid">
+    <div class="card">
+      <h2>1. Audio & Presets</h2>
+      
+      <label>Import Local <code>.milk</code> Folder</label>
+      <button id="selectFolderBtn" class="btn-secondary">📁 Open Local .milk Folder</button>
+      <input type="file" id="fallbackFolderInput" webkitdirectory directory multiple accept=".milk" style="display: none;" />
+
+      <label>Import Audio Files (MP3 / WAV / FLAC)</label>
+      <input type="file" id="audioFilesInput" multiple accept="audio/*" />
+
+      <label>Global Default Preset</label>
+      <select id="presetSelect">
+        <option value="">Loading built-in presets...</option>
+      </select>
+
+      <label>Export Resolution & Framerate</label>
+      <div style="display: flex; gap: 0.5rem;">
+        <select id="resSelect">
+          <option value="1920x1080" selected>1080p</option>
+          <option value="1280x720">720p</option>
+        </select>
+        <select id="fpsSelect">
+          <option value="60" selected>60 FPS</option>
+          <option value="30">30 FPS</option>
+        </select>
+      </div>
+
+      <button id="startBatchBtn" class="btn-primary" disabled>Start Batch Rendering</button>
+    </div>
+
+    <div class="card">
+      <h2>2. Interactive Live Preview <span id="presetCountBadge" class="badge">0 Presets Ready</span></h2>
+      <canvas id="previewCanvas" width="1920" height="1080"></canvas>
+      
+      <div class="preview-controls">
+        <button id="previewPlayBtn" class="btn-secondary" style="margin-bottom:0;" disabled>▶ Play Selected Audio Preview</button>
+        <audio id="previewAudioPlayer" controls style="display:none;"></audio>
+      </div>
+    </div>
+  </div>
+
+  <div class="card" style="margin-bottom: 1.5rem;">
+    <h2>3. Processing Queue & Per-Track Presets</h2>
+    <div id="zipNoticeBanner" class="notice-banner">
+      📦 A ZIP file containing all generated MP4 videos will automatically be available for download here once the processing queue is complete.
+    </div>
+    <div id="zipContainer" style="margin-bottom: 1rem; display: none;"></div>
+    <table class="queue-table">
+      <thead>
+        <tr>
+          <th>Track Title</th>
+          <th style="width: 35%;">Assigned Preset</th>
+          <th style="width: 25%;">Progress</th>
+          <th>Action</th>
+        </tr>
+      </thead>
+      <tbody id="queueBody">
+        <tr>
+          <td colspan="4" style="text-align: center; color: var(--text-dim);">No audio files imported yet.</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div class="card">
+    <h2>System Activity Log</h2>
+    <div id="logBox">Status: Ready.</div>
+  </div>
+
+  <script type="module">
+    import * as Mp4Muxer from 'https://cdn.jsdelivr.net/npm/mp4-muxer@5.1.3/build/mp4-muxer.mjs';
+
+    if (window.location.protocol === 'file:') {
+      document.getElementById('fileProtocolWarning').style.display = 'block';
+    }
+
+    let allPresets = {};
+    let customPresetsCount = 0;
+    let trackQueue = [];
+    let isProcessing = false;
+
+    let previewAudioCtx = null;
+    let previewSourceNode = null;
+    let previewVisualizer = null;
+    let isPreviewPlaying = false;
+    let previewAnimFrame = null;
+
+    const selectFolderBtn = document.getElementById('selectFolderBtn');
+    const fallbackFolderInput = document.getElementById('fallbackFolderInput');
+    const audioFilesInput = document.getElementById('audioFilesInput');
+    const presetSelect = document.getElementById('presetSelect');
+    const presetCountBadge = document.getElementById('presetCountBadge');
+    const startBatchBtn = document.getElementById('startBatchBtn');
+    const queueBody = document.getElementById('queueBody');
+    const logBox = document.getElementById('logBox');
+    const canvas = document.getElementById('previewCanvas');
+    const previewPlayBtn = document.getElementById('previewPlayBtn');
+    const previewAudioPlayer = document.getElementById('previewAudioPlayer');
+    const zipNoticeBanner = document.getElementById('zipNoticeBanner');
+    const zipContainer = document.getElementById('zipContainer');
+
+    function log(msg) {
+      logBox.innerHTML += `<br>[${new Date().toLocaleTimeString()}] ${msg}`;
+      logBox.scrollTop = logBox.scrollHeight;
+    }
+
+    function getButterchurn() {
+      const raw = window.butterchurn;
+      if (!raw) return null;
+      return raw.default || raw;
+    }
+
+    function getButterchurnPresets() {
+      const raw = window.butterchurnPresets;
+      if (!raw) return null;
+      return raw.default || raw;
+    }
+
+    function initPresets() {
+      const bcPresetsLib = getButterchurnPresets();
+      if (bcPresetsLib && typeof bcPresetsLib.getPresets === 'function') {
+        allPresets = { ...bcPresetsLib.getPresets() };
+        updatePresetDropdowns();
+        log(`Loaded ${Object.keys(allPresets).length} built-in Milkdrop presets.`);
+      } else {
+        log('Error: butterchurnPresets.min.js not loaded or invalid format.');
+      }
+    }
+
+    if (document.readyState === 'loading') {
+      window.addEventListener('DOMContentLoaded', initPresets);
+    } else {
+      initPresets();
+    }
+
+    function updatePresetDropdowns() {
+      const presetNames = Object.keys(allPresets).sort((a, b) => a.localeCompare(b));
+      presetCountBadge.textContent = `${presetNames.length} Presets Available (${customPresetsCount} Local .milk)`;
+
+      const currentSel = presetSelect.value;
+      presetSelect.innerHTML = '';
+      
+      presetNames.forEach(name => {
+        const opt = document.createElement('option');
+        opt.value = name;
+        opt.textContent = name;
+        presetSelect.appendChild(opt);
+      });
+
+      if (currentSel && allPresets[currentSel]) {
+        presetSelect.value = currentSel;
+      }
+
+      document.querySelectorAll('.row-preset-select').forEach(select => {
+        const val = select.value;
+        select.innerHTML = '';
+        presetNames.forEach(name => {
+          const opt = document.createElement('option');
+          opt.value = name;
+          opt.textContent = name;
+          select.appendChild(opt);
+        });
+        if (val && allPresets[val]) select.value = val;
+      });
+    }
+
+    // Local .milk Folder Import
+    selectFolderBtn.addEventListener('click', async () => {
+      if ('showDirectoryPicker' in window) {
+        try {
+          const dirHandle = await window.showDirectoryPicker();
+          log(`Accessing folder: "${dirHandle.name}"...`);
+          let imported = 0;
+
+          for await (const entry of dirHandle.values()) {
+            if (entry.kind === 'file' && entry.name.toLowerCase().endsWith('.milk')) {
+              const file = await entry.getFile();
+              await parseAndAddMilkFile(file);
+              imported++;
+            }
+          }
+          log(`Imported ${imported} custom .milk preset(s).`);
+        } catch (err) {
+          if (err.name !== 'AbortError') log(`Folder Picker Error: ${err.message}`);
+        }
+      } else {
+        fallbackFolderInput.click();
+      }
+    });
+
+    fallbackFolderInput.addEventListener('change', async (e) => {
+      const files = Array.from(e.target.files);
+      let imported = 0;
+      for (let file of files) {
+        if (file.name.toLowerCase().endsWith('.milk')) {
+          await parseAndAddMilkFile(file);
+          imported++;
+        }
+      }
+      log(`Imported ${imported} custom .milk file(s).`);
+    });
+
+    async function parseAndAddMilkFile(file) {
+      try {
+        const text = await file.text();
+        const presetName = `📁 ${file.name.replace(/\.milk$/i, '')}`;
+        
+        // Butterchurn presets accept raw .milk strings or parsed configs
+        allPresets[presetName] = text;
+        customPresetsCount++;
+        updatePresetDropdowns();
+      } catch (err) {
+        console.error(`Failed parsing ${file.name}:`, err);
+      }
+    }
+
+    audioFilesInput.addEventListener('change', (e) => {
+      const files = Array.from(e.target.files);
+      if (files.length === 0) return;
+
+      trackQueue = files.map((file, idx) => ({
+        id: idx,
+        file: file,
+        presetName: presetSelect.value || Object.keys(allPresets)[0],
+        status: 'Ready',
+        progress: 0,
+        blobUrl: null,
+        arrayBufferResult: null
+      }));
+
+      renderQueueUI();
+      startBatchBtn.disabled = false;
+      previewPlayBtn.disabled = false;
+      zipNoticeBanner.style.display = 'block';
+      zipContainer.style.display = 'none';
+
+      previewAudioPlayer.src = URL.createObjectURL(files[0]);
+      log(`Loaded ${files.length} audio file(s) into queue.`);
+    });
+
+    presetSelect.addEventListener('change', () => {
+      const sel = presetSelect.value;
+      trackQueue.forEach(t => { if (t.status === 'Ready') t.presetName = sel; });
+      renderQueueUI();
+      if (isPreviewPlaying && previewVisualizer) {
+        previewVisualizer.loadPreset(allPresets[sel], 1.0);
+      }
+    });
+
+    function renderQueueUI() {
+      queueBody.innerHTML = '';
+      if (trackQueue.length === 0) {
+        queueBody.innerHTML = `<tr><td colspan="4" style="text-align: center; color: var(--text-dim);">No audio files imported yet.</td></tr>`;
+        return;
+      }
+
+      trackQueue.forEach(item => {
+        const tr = document.createElement('tr');
+        tr.innerHTML = `
+          <td><strong>${item.file.name}</strong></td>
+          <td>
+            <select class="row-preset-select" data-id="${item.id}">
+              ${Object.keys(allPresets).sort((a,b)=>a.localeCompare(b)).map(p => `
+                <option value="${p}" ${p === item.presetName ? 'selected' : ''}>${p}</option>
+              `).join('')}
+            </select>
+          </td>
+          <td>
+            <div class="progress-bar-bg">
+              <div class="progress-bar-fill" style="width: ${item.progress}%"></div>
+            </div>
+            <span style="font-size: 0.75rem; color: var(--text-dim);">${item.progress}% - ${item.status}</span>
+          </td>
+          <td>
+            ${item.blobUrl ? `<a href="${item.blobUrl}" download="${item.file.name.replace(/\.[^/.]+$/, '')}.mp4" style="color: var(--success); font-weight: bold;">Download MP4</a>` : '—'}
+          </td>
+        `;
+        queueBody.appendChild(tr);
+      });
+
+      document.querySelectorAll('.row-preset-select').forEach(sel => {
+        sel.addEventListener('change', (e) => {
+          const id = parseInt(e.target.getAttribute('data-id'), 10);
+          trackQueue[id].presetName = e.target.value;
+        });
+      });
+    }
+
+    previewPlayBtn.addEventListener('click', async () => {
+      if (isPreviewPlaying) {
+        stopLivePreview();
+        return;
+      }
+
+      const bc = getButterchurn();
+      if (!bc) {
+        log('Error: butterchurn.min.js is missing or failed to initialize.');
+        return;
+      }
+
+      if (!previewAudioCtx) {
+        previewAudioCtx = new (window.AudioContext || window.webkitAudioContext)();
+        previewSourceNode = previewAudioCtx.createMediaElementSource(previewAudioPlayer);
+        previewSourceNode.connect(previewAudioCtx.destination);
+      }
+
+      if (previewAudioCtx.state === 'suspended') {
+        await previewAudioCtx.resume();
+      }
+
+      canvas.width = 1280;
+      canvas.height = 720;
+
+      previewVisualizer = bc.createVisualizer(previewAudioCtx, canvas, {
+        width: 1280,
+        height: 720,
+        pixelRatio: 1.0
+      });
+
+      previewVisualizer.connectAudio(previewSourceNode);
+      const selectedPreset = allPresets[presetSelect.value] || Object.values(allPresets)[0];
+      previewVisualizer.loadPreset(selectedPreset, 0.0);
+
+      previewAudioPlayer.play();
+      isPreviewPlaying = true;
+      previewPlayBtn.textContent = '⏸ Pause Preview';
+
+      function renderFrame() {
+        if (!isPreviewPlaying) return;
+        previewVisualizer.render();
+        previewAnimFrame = requestAnimationFrame(renderFrame);
+      }
+      renderFrame();
+    });
+
+    function stopLivePreview() {
+      isPreviewPlaying = false;
+      previewAudioPlayer.pause();
+      if (previewAnimFrame) cancelAnimationFrame(previewAnimFrame);
+      previewPlayBtn.textContent = '▶ Play Selected Audio Preview';
+    }
+
+    startBatchBtn.addEventListener('click', async () => {
+      if (isProcessing) return;
+      stopLivePreview();
+
+      isProcessing = true;
+      startBatchBtn.disabled = true;
+      zipContainer.style.display = 'none';
+
+      for (let track of trackQueue) {
+        if (track.status === 'Completed') continue;
+
+        try {
+          track.status = 'Rendering...';
+          renderQueueUI();
+          log(`Starting rendering: ${track.file.name}`);
+
+          const { mp4Blob, arrayBuffer } = await renderAudioToMP4(track, (pct) => {
+            track.progress = pct;
+            renderQueueUI();
+          });
+
+          track.blobUrl = URL.createObjectURL(mp4Blob);
+          track.arrayBufferResult = arrayBuffer;
+          track.status = 'Completed';
+          track.progress = 100;
+          renderQueueUI();
+          log(`Finished rendering: ${track.file.name}`);
+        } catch (err) {
+          console.error(err);
+          track.status = 'Failed: ' + err.message;
+          renderQueueUI();
+          log(`Error rendering ${track.file.name}: ${err.message}`);
+        }
+      }
+
+      isProcessing = false;
+      startBatchBtn.disabled = false;
+      log('All batch renders complete!');
+
+      // Generate ZIP package for all successful renders
+      await generateAndDisplayZip();
+    });
+
+    async function generateAndDisplayZip() {
+      const completedTracks = trackQueue.filter(t => t.status === 'Completed' && t.arrayBufferResult);
+      if (completedTracks.length === 0) return;
+
+      log('Packaging rendered files into a ZIP archive...');
+      const zip = new JSZip();
+
+      completedTracks.forEach(track => {
+        const baseName = track.file.name.replace(/\.[^/.]+$/, '');
+        zip.file(`${baseName}_dairy_factory.mp4`, track.arrayBufferResult);
+      });
+
+      const zipBlob = await zip.generateAsync({ type: 'blob' });
+      const zipUrl = URL.createObjectURL(zipBlob);
+
+      zipContainer.innerHTML = `
+        <a href="${zipUrl}" download="dairy_factory_renders.zip" class="btn-primary" style="display: block; text-align: center; text-decoration: none; padding: 0.8rem; border-radius: 8px;">
+          📦 Download All Renders as ZIP (${completedTracks.length} files)
+        </a>
+      `;
+      zipContainer.style.display = 'block';
+      zipNoticeBanner.style.display = 'none';
+      log('ZIP archive ready for download!');
+    }
+
+    async function renderAudioToMP4(trackItem, progressCb) {
+      const bc = getButterchurn();
+      if (!bc) throw new Error('Butterchurn library not loaded.');
+
+      const [width, height] = document.getElementById('resSelect').value.split('x').map(Number);
+      const fps = parseInt(document.getElementById('fpsSelect').value, 10);
+      
+      canvas.width = width;
+      canvas.height = height;
+
+      const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+      const fileBuffer = await trackItem.file.arrayBuffer();
+      const decodedAudio = await audioCtx.decodeAudioData(fileBuffer);
+      const sampleRate = decodedAudio.sampleRate;
+      const duration = decodedAudio.duration;
+      const totalFrames = Math.floor(duration * fps);
+
+      const visualizer = bc.createVisualizer(audioCtx, canvas, {
+        width: width,
+        height: height,
+        pixelRatio: 1.0
+      });
+      const selectedPresetObj = allPresets[trackItem.presetName];
+      visualizer.loadPreset(selectedPresetObj, 0.0);
+
+      // Candidate codec list with fallback profiles
+      const candidateConfigs = [
+        { codec: 'avc1.42001f', name: 'H.264 Baseline' },
+        { codec: 'avc1.42E01F', name: 'H.264 Constrained Baseline' },
+        { codec: 'avc1.4d002a', name: 'H.264 Main' },
+        { codec: 'vp09.00.10.08', name: 'VP9' }
+      ];
+
+      let validVideoConfig = null;
+      for (const item of candidateConfigs) {
+        const configTest = {
+          codec: item.codec,
+          width: width,
+          height: height,
+          bitrate: 12_000_000,
+          framerate: fps
+        };
+        const support = await VideoEncoder.isConfigSupported(configTest);
+        if (support.supported) {
+          validVideoConfig = configTest;
+          log(`Selected video codec: ${item.name} (${item.codec})`);
+          break;
+        }
+      }
+
+      if (!validVideoConfig) {
+        throw new Error('No supported video encoding codec found on this browser/device.');
+      }
+
+      let muxer = new Mp4Muxer.Muxer({
+        target: new Mp4Muxer.ArrayBufferTarget(),
+        video: { 
+          codec: validVideoConfig.codec.startsWith('vp') ? 'vp9' : 'avc', 
+          width: width, 
+          height: height 
+        },
+        audio: { 
+          codec: 'aac', 
+          numberOfChannels: decodedAudio.numberOfChannels, 
+          sampleRate: sampleRate 
+        },
+        fastStart: 'in-memory'
+      });
+
+      let encoderError = null;
+      const videoEncoder = new VideoEncoder({
+        output: (chunk, meta) => muxer.addVideoChunk(chunk, meta),
+        error: (e) => {
+          console.error('VideoEncoder error:', e);
+          encoderError = e;
+        }
+      });
+
+      videoEncoder.configure(validVideoConfig);
+
+      const audioEncoder = new AudioEncoder({
+        output: (chunk, meta) => muxer.addAudioChunk(chunk, meta),
+        error: (e) => console.error('AudioEncoder error:', e)
+      });
+
+      audioEncoder.configure({
+        codec: 'mp4a.40.2',
+        numberOfChannels: decodedAudio.numberOfChannels,
+        sampleRate: sampleRate,
+        bitrate: 192_000
+      });
+
+      const channelData = [];
+      for (let i = 0; i < decodedAudio.numberOfChannels; i++) {
+        channelData.push(decodedAudio.getChannelData(i));
+      }
+      
+      const audioChunkSize = 2048;
+      for (let offset = 0; offset < decodedAudio.length; offset += audioChunkSize) {
+        const frameCount = Math.min(audioChunkSize, decodedAudio.length - offset);
+        const pcmPlanar = new Float32Array(frameCount * decodedAudio.numberOfChannels);
+
+        for (let ch = 0; ch < decodedAudio.numberOfChannels; ch++) {
+          pcmPlanar.set(channelData[ch].subarray(offset, offset + frameCount), ch * frameCount);
+        }
+
+        const audioData = new AudioData({
+          format: 'f32-planar',
+          sampleRate: sampleRate,
+          numberOfChannels: decodedAudio.numberOfChannels,
+          numberOfFrames: frameCount,
+          timestamp: Math.round((offset / sampleRate) * 1_000_000),
+          data: pcmPlanar
+        });
+
+        audioEncoder.encode(audioData);
+        audioData.close();
+      }
+
+      const frameDurationMicrosec = Math.round(1_000_000 / fps);
+
+      for (let i = 0; i < totalFrames; i++) {
+        if (encoderError) throw encoderError;
+
+        const currentTime = i / fps;
+        visualizer.render({ elapsedTime: currentTime });
+
+        const frame = new VideoFrame(canvas, { timestamp: i * frameDurationMicrosec });
+        const keyFrame = (i % (fps * 2) === 0);
+        
+        videoEncoder.encode(frame, { keyFrame });
+        frame.close();
+
+        if (i % 15 === 0) {
+          progressCb(Math.floor((i / totalFrames) * 100));
+          await new Promise(r => setTimeout(r, 0));
+        }
+      }
+
+      await videoEncoder.flush();
+      await audioEncoder.flush();
+      muxer.finalize();
+
+      const { buffer } = muxer.target;
+      audioCtx.close();
+
+      return {
+        mp4Blob: new Blob([buffer], { type: 'video/mp4' }),
+        arrayBuffer: buffer
+      };
+    }
+  </script>
+</body>
+</html>
