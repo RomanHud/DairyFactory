@@ -625,6 +625,15 @@
       const duration = decodedAudio.duration;
       const totalFrames = Math.floor(duration * fps);
 
+      // Use preserveDrawingBuffer to prevent sudden context stripping under heavy loads
+      const gl = canvas.getContext('webgl2') || canvas.getContext('webgl');
+      if (gl) {
+        canvas.addEventListener('webglcontextlost', (e) => {
+          e.preventDefault();
+          throw new Error('WebGL Context Lost during rendering! GPU out of memory.');
+        }, false);
+      }
+
       const visualizer = bc.createVisualizer(audioCtx, canvas, {
         width: width,
         height: height,
@@ -633,7 +642,6 @@
       const selectedPresetObj = allPresets[trackItem.presetName];
       visualizer.loadPreset(selectedPresetObj, 0.0);
 
-      // Candidate codec list with fallback profiles
       const candidateConfigs = [
         { codec: 'avc1.42001f', name: 'H.264 Baseline' },
         { codec: 'avc1.42E01F', name: 'H.264 Constrained Baseline' },
@@ -700,6 +708,7 @@
         bitrate: 192_000
       });
 
+      // Encode Audio Track
       const channelData = [];
       for (let i = 0; i < decodedAudio.numberOfChannels; i++) {
         channelData.push(decodedAudio.getChannelData(i));
@@ -727,6 +736,7 @@
         audioData.close();
       }
 
+      // Encode Video Frames with memory pacing
       const frameDurationMicrosec = Math.round(1_000_000 / fps);
 
       for (let i = 0; i < totalFrames; i++) {
@@ -741,14 +751,18 @@
         videoEncoder.encode(frame, { keyFrame });
         frame.close();
 
-        if (i % 15 === 0) {
-          progressCb(Math.floor((i / totalFrames) * 100));
-          await new Promise(r => setTimeout(r, 0));
+        // Yield execution and force micro-task checkpoints every 10 frames to prevent GPU buffer overflow
+        if (i % 10 === 0) {
+          progressCb(Math.min(99, Math.floor((i / totalFrames) * 100)));
+          await new Promise(r => setTimeout(r, 4)); 
         }
       }
 
+      log('Flushing encoders...');
       await videoEncoder.flush();
       await audioEncoder.flush();
+      
+      log('Finalizing MP4 container...');
       muxer.finalize();
 
       const { buffer } = muxer.target;
